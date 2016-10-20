@@ -1,0 +1,198 @@
+---
+title: "Point Loma Abalone Movement Study"
+author: "Kevin L. Stierhoff"
+date: "October 18, 2016"
+output: html_notebook
+---
+
+```{r LoadLibraries,echo=FALSE,message=FALSE,error=FALSE}
+rm(list=ls())
+# Load libraries
+library(png);library(grid);library(gridExtra);library(reshape2);library(RODBC);
+library(xtable);library(surveyR);library(pander);library(plyr);library(knitr);library(plotrix);
+suppressPackageStartupMessages(library(cowplot));suppressPackageStartupMessages(library(ggplot2));
+suppressPackageStartupMessages(library(stringr));suppressPackageStartupMessages(library(gdata)); 
+suppressPackageStartupMessages(library(ggmap));suppressPackageStartupMessages(library(raster));
+
+# set system time zone to GMT
+Sys.setenv(tz = "GMT")
+
+# Set Database locatin
+db.dir <- "D:/PROJECTS/2017 Point Loma Abalone Movement/Data/Pinto_tracking.accdb"
+
+# determines method of table generation (whether pander or xtable) for best formatting
+doc.type <-knitr::opts_knit$get('rmarkdown.pandoc.to')
+
+# global knitr chunk options
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE,fig.align='center')
+# global pander options
+panderOptions('table.style','rmarkdown'); panderOptions('table.split.table', Inf); panderOptions('digits', 6);
+panderOptions('round', 6); panderOptions('keep.trailing.zeros', TRUE); panderOptions('missing', "")
+
+# processing instructions (TRUE/FALSE)
+download.maps <- FALSE # download new maps, or use existing
+redraw.plots  <- FALSE # draw new acoustic calibration plots, or use existing
+calc.raw.size <- FALSE # computer RAW file size, or use existing
+save.output   <- FALSE # save image of workspace following knit
+# output options
+png.res <- 150 # dpi for saved PNG images (to reduce file size while at sea)
+```
+
+```{r FilterOptions}
+# Horizontal position error threshold for data filtering
+max.HPE <- 50
+# Calculated distance threshold for data filtering
+max.DIST <- 50
+```
+
+
+```{r DataImport}
+# Import tag data ####
+import.data <- FALSE
+if(import.data==TRUE){
+  ab.files <- dir("../Data/VPS-PtLoma-01-Results-20160817/Positions/ab_tags",full.names = TRUE)
+  sync.files <- dir("../Data/VPS-PtLoma-01-Results-20160817/Positions/sync_tags",full.names = TRUE)
+  # create temporary data frames for pre-processed tag data
+  ab.res <- data.frame()
+  sync.res <- data.frame()
+  # read all abalone transmitter files
+  for(i in ab.files){
+    # i=ab.files[1]
+    # read file i
+    temp <- read.csv(i)
+    # convert DATETIME to POSIXct
+    temp$DATETIME <- as.POSIXct(as.character(temp$DATETIME),format = "%Y-%m-%d %H:%M:%S") #"2015-11-13 22:00:19"
+    # calculate the time interval between detections
+    temp$INTERVAL <- c(0,as.numeric(difftime(temp$DATETIME[2:nrow(temp)],temp$DATETIME[1:nrow(temp)-1],units = 'secs')))
+    # calculate Euclidian distance between detections
+    temp$DISTANCE <- c(0,sqrt(((temp$X[2:nrow(temp)]-temp$X[1:nrow(temp)-1])^2)+((temp$Y[2:nrow(temp)]-temp$Y[1:nrow(temp)-1])^2)))
+    # add data to temporary data frame
+    ab.res <- rbind(ab.res,temp)
+  }
+  # create factor for tag type
+  ab.res$TYPE <- as.factor("PINTO")
+  # save results to .Rdata file
+  save(ab.res,file="../Data/abalone_data.Rdata")
+  
+  # read all sync tag files
+  for(i in sync.files){
+    temp <- read.csv(i)
+    # convert DATETIME to POSIXct
+    temp$DATETIME <- as.POSIXct(as.character(temp$DATETIME),format = "%Y-%m-%d %H:%M:%S") #"2015-11-13 22:00:19"
+    # calculate the time interval between detections
+    temp$INTERVAL <- c(0,as.numeric(difftime(temp$DATETIME[2:nrow(temp)],temp$DATETIME[1:nrow(temp)-1],units = 'secs')))
+    # calculate Euclidian distance between detections
+    temp$DISTANCE <- c(0,sqrt(((temp$X[2:nrow(temp)]-temp$X[1:nrow(temp)-1])^2)+((temp$Y[2:nrow(temp)]-temp$Y[1:nrow(temp)-1])^2)))
+    # add data to temporary data frame
+    sync.res <- rbind(sync.res,temp)
+  }
+  # create factor for tag type
+  sync.res$TYPE <- as.factor("SYNC TAG")
+  # save results to .Rdata file
+  save(sync.res,file="../Data/sync_data.Rdata")
+  
+  # read station info file
+  station.data <- read.csv("../Data/stations.csv")
+  save(station.data,file="../Data/stations.Rdata")
+}else{
+  # load previously procesSsed results
+  load("../Data/sync_data.Rdata")
+  load("../Data/abalone_data.Rdata")
+  load("../Data/stations.Rdata")
+}
+```
+
+```{r CreateDateBins}
+cuts <- as.numeric(seq(min(ab.res$DATETIME),max(ab.res$DATETIME), 2592000/2))
+# cuts <- seq(min(ab.res$DATETIME),max(ab.res$DATETIME), 2592000/2)
+ab.res$CUT <- cut(as.numeric(ab.res$DATETIME))
+```
+
+
+# Summary of abalone tag data
+
+```{r SummarizeAbTagData}
+ab.summ <- ddply(ab.res,.(DETECTEDID),summarise,
+      nDetections = length(X),
+      FirstRecord = min(DATETIME),
+      LastRecord = max(DATETIME),
+      MeanHPE = mean(HPE),
+      MaxHPE = max(HPE),
+      MeanInterval = mean(INTERVAL),
+      SdInterval = sd(INTERVAL),
+      MeanDistance = mean(DISTANCE),
+      SdDistance = sd(DISTANCE))
+print(ab.summ)
+```
+
+# Summary of sync tag data
+
+```{r SummarizeSyncTagData}
+sync.summ <- ddply(sync.res,.(DETECTEDID),summarise,
+      nDetections = length(X),
+      FirstRecord = min(DATETIME),
+      LastRecord = max(DATETIME),
+      MeanHPE = mean(HPE),
+      MaxHPE = max(HPE),
+      MeanInterval = mean(INTERVAL),
+      SdInterval = sd(INTERVAL),
+      MeanDistance = mean(DISTANCE),
+      SdDistance = sd(DISTANCE))
+print(sync.summ)
+```
+
+# Histograms of abalone distances
+```{r AbTagDistanceHist,fig.height=12,fig.width=12}
+ggplot() + 
+  geom_histogram(data = ab.res,aes(DISTANCE)) + facet_wrap(~DETECTEDID)
+ggsave(file = "../Figs/ab_dist_hist.png",height = 12,width = 12)
+```  
+
+# Histograms of sync tag distances
+```{r SyncTagDistanceHist,fig.height=10,fig.width=10}
+ggplot() + 
+  geom_histogram(data = sync.res,aes(DISTANCE)) + facet_wrap(~DETECTEDID)
+ggsave(file = "../Figs/sync_dist_hist.png",height = 10,width = 10)
+```
+
+# Plot of pinto abalone detection locations
+Pinto abalone detection locations mapped relative to the hydrophone stations and symbolized by horizontal position error (HPE; threshold = `r max.HPE`).
+
+```{r MapAbaloneLocations,fig.height=12,fig.width=12}
+ab.res.sub <- droplevels(subset(ab.res,ab.res$HPE < max.HPE))
+ggplot() +   
+  geom_point(data = ab.res.sub,aes(LON,LAT,colour=HPE)) + 
+  scale_colour_gradientn(colours=rev(rainbow(7))) + 
+  geom_point(data=station.data,aes(LON,LAT)) + 
+  facet_wrap(~DETECTEDID) + 
+  xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
+  theme_bw() + theme(plot.background=element_blank(),
+                     axis.text.x = element_text(angle = 45, vjust=0.5),
+                     axis.text.y = element_text(angle = 45, hjust=0.5)) +
+  coord_map()
+ggsave(file = "../Figs/ab_map.png",height = 12,width = 12)
+```
+
+# Plot of sync tag detection locations
+Sync tag detection locations mapped relative to the hydrophone stations and symbolized by horizontal position error (HPE; threshold = `r max.HPE`).
+
+```{r MapSyncTagLocations,fig.height=12,fig.width=12}
+sync.res.sub <- droplevels(subset(sync.res,sync.res$HPE < max.HPE))
+ggplot() +
+  geom_point(data = sync.res.sub,aes(LON,LAT,colour=HPE)) + 
+  scale_colour_gradientn(colours=rev(rainbow(7))) + 
+  geom_point(data=station.data,aes(LON,LAT)) +
+  facet_wrap(~DETECTEDID) +
+  xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
+  theme_bw() + theme(plot.background=element_blank(),
+                     axis.text.x = element_text(angle = 45, vjust=0.5),
+                     axis.text.y = element_text(angle = 45, hjust=0.5)) +
+  coord_map()
+ggsave(file = "../Figs/sync_tag_map.png",height = 12,width = 12)
+```
+
+
+
+
+
+
