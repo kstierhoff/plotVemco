@@ -4,4 +4,7 @@
 .Ruserdata
 Figs/
 Data/
+References/
 Presentations/
+*.pdf
+*.html
