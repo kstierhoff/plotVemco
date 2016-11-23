@@ -7,52 +7,40 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shiny);library(ggplot2);library(mapproj)
+library(shiny);library(ggplot2);library(mapproj);library(dplyr);
 
 # Define UI for application
 ui <- fluidPage(
   sidebarPanel(
+    # User-defined tag data file
+     fileInput('tagData',"Select tag data file (.CSV):",
+               accept=c('text/csv',
+                        'text/comma-separated-values,text/plain',
+                        '.csv')),
+
     # User-defined input file
-    fileInput('tagData',"Select data file:",
-              accept=c('text/csv', 
-                       'text/comma-separated-values,text/plain', 
-                       '.csv')),
-    tags$hr(),
-    checkboxInput('header', 'Header', TRUE),
-    radioButtons('sep', 'Separator',
-                 c(Comma=',', Semicolon=';', Tab='\t'),','),
-    radioButtons('quote', 'Quote',
-                 c(None='','Double Quote'='"','Single Quote'="'"),'"'),
+     fileInput('stationData',"Select hydrophone data file (.CSV):",
+               accept=c('text/csv',
+                        'text/comma-separated-values,text/plain',
+                        '.csv')),
     
-    # User-defined input file
-    fileInput('stationData',"Select hydrophone data file:",
-              accept=c('text/csv', 
-                       'text/comma-separated-values,text/plain', 
-                       '.csv')),
-    tags$hr(),
-    checkboxInput('header', 'Header', TRUE),
-    radioButtons('sep', 'Separator',
-                 c(Comma=',', Semicolon=';', Tab='\t'),','),
-    radioButtons('quote', 'Quote',
-                 c(None='','Double Quote'='"','Single Quote'="'"),'"'),
-    
-    # Maximum Horizontal Position Error (HPE)
-    sliderInput("maxHPE", "Max Horizontal Position Error:",
-                min=5, max=60, value=15),
-    
-    # Maximum Horizontal Position Error (HPE)
-    sliderInput("minTriangles", "Min. triangles used for position:",
-                min=0, max=7, value=1) 
-    # # Date range input selection
-    # ,dateRangeInput("daterange", "Date range:",
-    #                start = Sys.Date()-10,
-    #                end = Sys.Date()+10)
+    fluidRow(
+      # Maximum Horizontal Position Error (HPE)
+      column(6,sliderInput("maxHPE", "Max Horizontal Position Error:",
+                  min=0, max=60, value=15)),
+      
+      # Maximum Horizontal Position Error (HPE)
+      column(6,sliderInput("minTriangles", "Min. triangles used for position:",
+                  min=0, max=7, value=1))  
+    ) 
   ),
   
   mainPanel(
     #  Application title
     titlePanel("Interactive Vemco tag data explorer"),
     # First level text
+    h3("Filtering Options"),
+        # First level text
     h3("Overview"),
     # Descriptive text
     p("This in an interactive web app for exploring tag detections from a Vemco hydrophone array. 
@@ -80,34 +68,59 @@ server <- function(input, output) {
   tag.data <- reactive({
     inFile <- input$tagData
     if (is.null(inFile)) return(NULL)
-    
-    read.csv(inFile$datapath,header=input$header, sep=input$sep, 
-             quote=input$quote)
+    # read.csv file
+    read.csv(inFile$datapath)
   })
+  # tag.data <- reactive({
+  #   inFile <- input$tagData
+  #   if (is.null(inFile)){
+  #     return(NULL)
+  #   }else{
+  #     read.csv("Data/Examples/tag_example.csv")
+  #   }
+  #   # read.csv file
+  #   read.csv(inFile$datapath)
+  # })
   
   # Read user-defined station data file
   station.data <- reactive({
     inFile <- input$stationData
     if (is.null(inFile)) return(NULL)
     
-    read.csv(inFile$datapath,header=input$header, sep=input$sep, 
-             quote=input$quote)
+    # read.csv file
+    read.csv(inFile$datapath)
   })
+  
+  # station.data <- reactive({
+  #   inFile <- input$stationData
+  #   if (is.null(inFile)){
+  #     return(NULL)
+  #   }else{
+  #     read.csv("Data/Examples/station_example.csv")
+  #   }
+  #   # read.csv file
+  #   read.csv(inFile$datapath)
+  # })
 
   # Map of tag detections for all animals, filtered by slider settings
   output$map <- renderPlot({
     tagIn <- input$tagData
-    
+    stationIn <- input$stationData
     if (is.null(tagIn))  return(NULL)
-    df = tag.data()
+    if (is.null(stationIn))  return(NULL)
+    # filter tag data
+    tag.df = tag.data()
+    tag.df.filt = filter(tag.df,HPE <= input$maxHPE,n >= input$minTriangles)
+    station.df = station.data()
 
     ggplot() +
-      geom_point(data = df,aes(LON,LAT),colour = 'gray50',alpha = 0.5) +
-      geom_point(data = subset(df,HPE <= input$maxHPE & n >= input$minTriangles),aes(LON,LAT,colour = DETECTEDID)) +
+      geom_point(data = tag.df,aes(LON,LAT),colour = 'gray50',alpha = 0.5) +
+      geom_point(data = tag.df.filt,aes(LON,LAT,colour = DETECTEDID)) +
+      geom_point(data = station.df,aes(LON,LAT),size=2) +
       xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
       theme_bw() + theme(plot.background=element_blank(),
                          axis.text.y = element_text(angle = 90, hjust=0.5),
-                         panel.margin=unit(1, "lines")) +
+                         panel.spacing = unit(1, "lines")) +
       coord_map()
   })
   

@@ -13,7 +13,7 @@ output:
 rm(list=ls())
 # Load libraries
 suppressPackageStartupMessages(library(ggplot2));library(pander);
-library(lubridate); library(plyr);library(knitr);
+library(lubridate); library(plyr);library(knitr);library(lubridate);
 # set system time zone to GMT
 Sys.setenv(tz = "GMT")
 # Set Database locatin
@@ -21,7 +21,8 @@ db.dir <- "D:/PROJECTS/2017 Point Loma Abalone Movement/Data/Pinto_tracking.accd
 # determines method of table generation (whether pander or xtable) for best formatting
 doc.type <-knitr::opts_knit$get('rmarkdown.pandoc.to')
 # global knitr chunk options
-knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE,fig.align='center')
+knitr::opts_chunk$set(warning=FALSE, message=FALSE,fig.align='center')
+# knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE,fig.align='center')
 # global pander options
 panderOptions('table.style','rmarkdown'); panderOptions('table.split.table', Inf); panderOptions('digits', 6);
 panderOptions('round', 6); panderOptions('keep.trailing.zeros', TRUE); panderOptions('missing', "")
@@ -31,7 +32,7 @@ import.data <- FALSE
 
 ```{r FilterOptions}
 # Horizontal position error (unitless) threshold for data filtering
-max.HPE <- 15
+max.HPE <- 13
 # Calculated distance (m) threshold for data filtering
 max.DIST <- 20
 # Calculated speed (m/s) threshold for data filtering
