@@ -9,6 +9,8 @@
 
 library(shiny);library(ggplot2);library(mapproj);library(dplyr);
 
+options(shiny.maxRequestSize = 30*1024^2)
+
 # LOAD DATA FILES #####
 # Read tag data file
 tag.data <- read.csv("../../Data/Examples/tag_example_big.csv")

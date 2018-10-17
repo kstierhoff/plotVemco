@@ -11,6 +11,9 @@ library(shiny)
 library(ggplot2)
 library(mapproj)
 library(dplyr)
+
+options(shiny.maxRequestSize = 100*1024^2)
+
 # Define UI for application
 ui <- fluidPage(
   sidebarPanel(
@@ -23,7 +26,7 @@ ui <- fluidPage(
       )
     ),
 
-    # User-defined input file
+    # User-defined hydrophone file
     fileInput("stationData", "Select hydrophone data file (.CSV):",
       accept = c(
         "text/csv",
