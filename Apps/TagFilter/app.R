@@ -7,40 +7,50 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shiny);library(ggplot2);library(mapproj);library(dplyr);
-
+library(shiny)
+library(ggplot2)
+library(mapproj)
+library(dplyr)
 # Define UI for application
 ui <- fluidPage(
   sidebarPanel(
     # User-defined tag data file
-     fileInput('tagData',"Select tag data file (.CSV):",
-               accept=c('text/csv',
-                        'text/comma-separated-values,text/plain',
-                        '.csv')),
+    fileInput("tagData", "Select tag data file (.CSV):",
+      accept = c(
+        "text/csv",
+        "text/comma-separated-values,text/plain",
+        ".csv"
+      )
+    ),
 
     # User-defined input file
-     fileInput('stationData',"Select hydrophone data file (.CSV):",
-               accept=c('text/csv',
-                        'text/comma-separated-values,text/plain',
-                        '.csv')),
-    
+    fileInput("stationData", "Select hydrophone data file (.CSV):",
+      accept = c(
+        "text/csv",
+        "text/comma-separated-values,text/plain",
+        ".csv"
+      )
+    ),
+
     fluidRow(
       # Maximum Horizontal Position Error (HPE)
-      column(6,sliderInput("maxHPE", "Max Horizontal Position Error:",
-                  min=0, max=60, value=15)),
-      
+      column(6, sliderInput("maxHPE", "Max Horizontal Position Error:",
+        min = 0, max = 60, value = 15
+      )),
+
       # Maximum Horizontal Position Error (HPE)
-      column(6,sliderInput("minTriangles", "Min. triangles used for position:",
-                  min=0, max=7, value=1))  
-    ) 
+      column(6, sliderInput("minTriangles", "Min. triangles used for position:",
+        min = 0, max = 7, value = 1
+      ))
+    )
   ),
-  
+
   mainPanel(
     #  Application title
     titlePanel("Interactive Vemco tag data explorer"),
     # First level text
     h3("Filtering Options"),
-        # First level text
+    # First level text
     h3("Overview"),
     # Descriptive text
     p("This in an interactive web app for exploring tag detections from a Vemco hydrophone array. 
@@ -50,18 +60,18 @@ ui <- fluidPage(
     # Plot the tag data map
     h4("Tag map"),
     p("A map of all tag detections (gray points) and tag detections after filters have been applied (colored points)."),
-    plotOutput('map'),
+    plotOutput("map"),
     # Plot HPE histrograms for each tag
     h4("Horizontal position error (HPE) histrograms"),
     p("Frequency histograms of tag detections after filters have been applied."),
-    plotOutput('histHPE')
+    plotOutput("histHPE")
   )
 )
 
 # Define server output
 server <- function(input, output) {
   # set limit for file size
-  options(shiny.maxRequestSize=30*1024^2)
+  options(shiny.maxRequestSize = 30 * 1024^2)
   # # read station data
   # stations <- read.csv("../../Data/stations.csv")
   # Read user-defined data file
@@ -81,16 +91,16 @@ server <- function(input, output) {
   #   # read.csv file
   #   read.csv(inFile$datapath)
   # })
-  
+
   # Read user-defined station data file
   station.data <- reactive({
     inFile <- input$stationData
     if (is.null(inFile)) return(NULL)
-    
+
     # read.csv file
     read.csv(inFile$datapath)
   })
-  
+
   # station.data <- reactive({
   #   inFile <- input$stationData
   #   if (is.null(inFile)){
@@ -106,40 +116,41 @@ server <- function(input, output) {
   output$map <- renderPlot({
     tagIn <- input$tagData
     stationIn <- input$stationData
-    if (is.null(tagIn))  return(NULL)
-    if (is.null(stationIn))  return(NULL)
+    if (is.null(tagIn)) return(NULL)
+    if (is.null(stationIn)) return(NULL)
     # filter tag data
-    tag.df = tag.data()
-    tag.df.filt = filter(tag.df,HPE <= input$maxHPE,n >= input$minTriangles)
-    station.df = station.data()
+    tag.df <- tag.data()
+    tag.df.filt <- filter(tag.df, HPE <= input$maxHPE, n >= input$minTriangles)
+    station.df <- station.data()
 
     ggplot() +
-      geom_point(data = tag.df,aes(LON,LAT),colour = 'gray50',alpha = 0.5) +
-      geom_point(data = tag.df.filt,aes(LON,LAT,colour = DETECTEDID)) +
-      geom_point(data = station.df,aes(LON,LAT),size=2) +
-      xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
-      theme_bw() + theme(plot.background=element_blank(),
-                         axis.text.y = element_text(angle = 90, hjust=0.5),
-                         panel.spacing = unit(1, "lines")) +
+      geom_point(data = tag.df, aes(LON, LAT), colour = "gray50", alpha = 0.5) +
+      geom_point(data = tag.df.filt, aes(LON, LAT, colour = DETECTEDID)) +
+      geom_point(data = station.df, aes(LON, LAT), size = 2) +
+      xlab("\nLongitude (W)") + ylab("Latitude (N)\n") +
+      theme_bw() + theme(
+        plot.background = element_blank(),
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        panel.spacing = unit(1, "lines")
+      ) +
       coord_map()
   })
-  
+
   # Histogram of tag HPEs, filtered by slider settings
   output$histHPE <- renderPlot({
     inFile <- input$tagData
-    
-    if (is.null(inFile))  return(NULL)
-    df = tag.data()
-    
-    ggplot() + 
-      # geom_histogram(data = df,aes(HPE),colour = 'gray50') + 
-      geom_histogram(data = subset(df,HPE <= input$maxHPE & n >= input$minTriangles),aes(HPE),colour = 'black') + 
-      facet_wrap(~DETECTEDID,scales = "free_y") +
+
+    if (is.null(inFile)) return(NULL)
+    df <- tag.data()
+
+    ggplot() +
+      # geom_histogram(data = df,aes(HPE),colour = 'gray50') +
+      geom_histogram(data = subset(df, HPE <= input$maxHPE & n >= input$minTriangles), aes(HPE), colour = "black") +
+      facet_wrap(~DETECTEDID, scales = "free_y") +
       xlab("\nHorizontal Position Error") + ylab("Frequency\n") +
       theme_bw()
   })
 }
 
-# Run the application 
+# Run the application
 shinyApp(ui = ui, server = server)
-

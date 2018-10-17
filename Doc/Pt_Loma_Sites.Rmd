@@ -1,0 +1,20 @@
+---
+title: "Pt. Loma Sites"
+author: "Kevin L. Stierhoff"
+date: "October 25, 2017"
+output: html_document
+---
+
+```{r GetData, include=FALSE}
+library(tidyverse)
+library(leaflet)
+sites <- read_csv("D:/GIS/gis_data/abalone_tagging/pt_loma_sites_20171025.csv")
+```
+
+```{r LeafletMap}
+# Some good options include CartoDB.Positron, Stamen.Terrain, Esri.WorldImagery
+leaflet.tile <- "Stamen.Terrain" 
+leaflet(data = sites) %>% addProviderTiles(leaflet.tile) %>%
+  addMarkers(~long, ~lat, popup = ~as.character(name), label = ~as.character(name))
+```
+

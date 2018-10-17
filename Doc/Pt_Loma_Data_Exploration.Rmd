@@ -3,17 +3,17 @@ title: "Point Loma Abalone Tag Analysis"
 author: "Kevin L. Stierhoff"
 date: "October 18, 2016"
 output:
-  html_notebook:
-    toc: yes
   html_document:
+    toc: yes
+  html_notebook:
     toc: yes
 ---
 
 ```{r LoadLibraries,echo=FALSE,message=FALSE,error=FALSE}
 rm(list=ls())
 # Load libraries
-suppressPackageStartupMessages(library(ggplot2));library(pander);
-library(lubridate); library(plyr);library(knitr);library(lubridate);
+suppressPackageStartupMessages(library(ggplot2));library(pander);library(tidyr);library(MASS);
+library(lubridate); library(plyr);library(knitr);library(lubridate);library(dplyr);
 # set system time zone to GMT
 Sys.setenv(tz = "GMT")
 # Set Database locatin
@@ -32,13 +32,13 @@ import.data <- FALSE
 
 ```{r FilterOptions}
 # Horizontal position error (unitless) threshold for data filtering
-max.HPE <- 13
+max.HPE <- 7.5
 # Calculated distance (m) threshold for data filtering
 max.DIST <- 20
 # Calculated speed (m/s) threshold for data filtering
 max.SPEED <- 0.2
 # Minimum number of detections for convex hull plots
-min.DETECT <- 50
+min.DETECT <- 100
 ```
 
 ```{r DataImport}
@@ -85,6 +85,10 @@ if(import.data==TRUE){
   # save results to .Rdata file
   save(sync.res,file="../Data/sync_data.Rdata")
   
+  # read location summaries from Witting
+  locations <- read.csv("../Data/tag_location_summary_DW.csv")
+  save(locations,file="../Data/locations.Rdata")
+  
   # read station info file
   station.data <- read.csv("../Data/stations.csv")
   save(station.data,file="../Data/stations.Rdata")
@@ -92,6 +96,7 @@ if(import.data==TRUE){
   # load previously procesSsed results
   load("../Data/sync_data.Rdata")
   load("../Data/abalone_data.Rdata")
+  load("../Data/locations.Rdata")
   load("../Data/stations.Rdata")
 }
 ```
@@ -109,34 +114,71 @@ sync.res$CUT <- cut(as.numeric(sync.res$DATETIME),
 ```
 
 ```{r FilterData}
+# subset abalone and sync data based on filters above
+ab.res.sub <- ab.res %>% 
+  filter(HPE < max.HPE) %>% 
+  # remove weather events, as per D. Witting
+  filter(DATETIME < as.Date("2015-12-08") | DATETIME > as.Date("2016-01-15")) %>% 
+  filter(DATETIME < as.Date("2016-02-01") | DATETIME > as.Date("2016-02-04")) %>% 
+  filter(DATETIME < as.Date("2016-03-05") | DATETIME > as.Date("2016-03-20"))
+
+sync.res.sub <- sync.res %>% 
+  filter(HPE < max.HPE) %>% 
+  # remove weather events, as per D. Witting
+  filter(DATETIME < as.Date("2015-12-08") | DATETIME > as.Date("2016-01-15")) %>% 
+  filter(DATETIME < as.Date("2016-02-01") | DATETIME > as.Date("2016-02-04")) %>% 
+  filter(DATETIME < as.Date("2016-03-05") | DATETIME > as.Date("2016-03-20")) 
+
+# summarize tag detections
+# arrange(ddply(ab.res.sub,.(DETECTEDID),summarise,n=length(LON)),desc(n))
 # get number of detections for each ab and sync tag
-ab.tag.detections <- ddply(ab.res,.(DETECTEDID),summarise, N = length(X))
+ab.tag.detections <- ab.res.sub %>% 
+  group_by(DETECTEDID) %>% 
+  summarise(N = length(X)) %>%
+  arrange(desc(N))
 # get list of tags with number of detections greater than min.DETECT
 ab.tag.sub <- ab.tag.detections$DETECTEDID[ab.tag.detections$N > min.DETECT]
-
-# subset abalone and sync data based on filters above
-ab.res.sub <- droplevels(subset(ab.res,ab.res$HPE <= max.HPE & ab.res$DISTANCE <= max.DIST & ab.res$SPEED <= max.SPEED & ab.res$DETECTEDID %in% ab.tag.sub))
-sync.res.sub <- droplevels(subset(sync.res,sync.res$HPE <= max.HPE & sync.res$DISTANCE <= max.DIST))
+# filter tags with less than 150 detections
+ab.res.final <- filter(ab.res.sub,DETECTEDID %in% ab.tag.sub)
+ab.res.final$tag <- as.factor(substr(as.character(ab.res.final$DETECTEDID),12,14))
 ```
 
 # Overview  
 Here I present a preliminary exploration of data from pinto abalone that were tagged and tracked at Pt. Loma between `r floor_date(min(ab.res$DATETIME),"day")` and `r ceiling_date(max(ab.res$DATETIME),"day")`. The goal is to evaluate how to best filter the results to minimize positional errors and maximize information about movement distances, aggregation, etc.
 
-For starters, filtered data consisted of a subset of abalone and sync tag data that had a horizontal position error (HPE) of $\leq$ `r max.HPE`, a speed between detections of $\leq$ `r max.SPEED ` m/s, a computed distance between detections of  $\leq$ `r max.DIST` m. In addition, filtered results included only abalone tags with a minimum of `r min.DETECT` detections. This reduced the number of detections from `r nrow(ab.res)` to `r nrow(ab.res.sub)` for abalone tags (`r sprintf("%.1f",(1-(nrow(ab.res.sub)/nrow(ab.res)))*100)`% of detections removed), and `r nrow(sync.res)` to `r nrow(sync.res.sub)` for sync tags (`r sprintf("%.1f",(1-(nrow(sync.res.sub)/nrow(sync.res)))*100)`% of detections removed).
+For starters, filtered data consisted of a subset of abalone and sync tag data that had a horizontal position error (HPE) of $\leq$ `r max.HPE`, a speed between detections of $\leq$ `r max.SPEED ` m/s, a computed distance between detections of  $\leq$ `r max.DIST` m. In addition, filtered results included only abalone tags with a minimum of `r min.DETECT` detections. This reduced the number of detections from `r nrow(ab.res)` to `r nrow(ab.res.final)` for abalone tags (`r sprintf("%.1f",(1-(nrow(ab.res.final)/nrow(ab.res)))*100)`% of detections removed), and `r nrow(sync.res)` to `r nrow(sync.res.sub)` for sync tags (`r sprintf("%.1f",(1-(nrow(sync.res.sub)/nrow(sync.res)))*100)`% of detections removed).
 
 # Summary statistics  
 ## Abalone tag data
 **Table 1.** Summary of abalone tag data, where N is the number of detections and HPE is the horizontal position error (unitless). Filtered results include data from abalone tags that had $\geq$ `r min.DETECT` detections. 
 
 ```{r SummarizeAbTagData}
-ab.summ <- ddply(ab.res,.(DETECTEDID),summarise,
+ab.summ <- ab.res %>% 
+  group_by(DETECTEDID) %>% 
+  summarise(
       N = length(X),
-      FirstRecord = min(DATETIME),
-      LastRecord = max(DATETIME),
+      FirstRecord = format(min(DATETIME),format="%m/%d/%Y"),
+      LastRecord = format(max(DATETIME),format="%m/%d/%Y"),
       MeanHPE = mean(HPE),
       MeanDistance = mean(DISTANCE),
-      SdDistance = sd(DISTANCE))
+      SdDistance = sd(DISTANCE)) %>% 
+  arrange(desc(N))
 print(ab.summ)
+write.csv(dplyr::select(ab.summ,DETECTEDID,FirstRecord,N,LastRecord),file="../Output/tag_summary_all.csv",quote = FALSE,row.names = FALSE)
+
+ab.summ.filt <- ab.res.sub %>% 
+  group_by(DETECTEDID) %>% 
+  summarise(
+      N = length(X),
+      FirstRecord = format(min(DATETIME),format="%m/%d/%Y"),
+      LastRecord = format(max(DATETIME),format="%m/%d/%Y"),
+      MeanHPE = mean(HPE),
+      MeanDistance = mean(DISTANCE),
+      SdDistance = sd(DISTANCE)) %>% 
+  arrange(desc(N))
+
+write.csv(dplyr::select(ab.summ.filt,DETECTEDID,FirstRecord,N,LastRecord),file="../Output/tag_summary_filtered.csv",quote = FALSE,row.names = FALSE)
+
 ```
 
 ## Sync tag data
@@ -164,19 +206,19 @@ ggplot(ab.res,aes(CUT)) + geom_histogram(binwidth=1,colour='black') +
     # scale_y_continuous("Number of detections",breaks = seq(0,1200,300),limits = c(0,1200),expand = c(0,0)) +
   facet_wrap(~DETECTEDID,scales="free_y") +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ```  
 
 ### Abalone tag horizontal position error (HPE) - FILTERED
 Histograms of abalone tag horizontal position error (HPE; unitless), filtered to include only detections with HPE $\leq$ `r max.HPE`. **NOTE differenes in y-axis scale.**
 
 ```{r AbTagHPEFilt,fig.height=12,fig.width=12}
-ggplot(ab.res.sub,aes(HPE)) + geom_histogram(binwidth=1,colour='black') +
+ggplot(ab.res.final,aes(HPE)) + geom_histogram(binwidth=1,colour='black') +
   scale_x_continuous("\nWeek",breaks = seq(0,max.HPE,max.HPE/5),limits = c(0,max.HPE),expand=c(0,0)) +
   scale_y_continuous("Number of detections\n") +
   facet_wrap(~DETECTEDID,scales="free_y") +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ```
 
 ### Abalone tag movement distances between detections 
@@ -190,7 +232,7 @@ ggplot(ab.res,aes(DISTANCE)) +
   # scale_y_continuous("Frequency\n",limits = c(0,1500),breaks = seq(0,1500,300),expand=c(0,0)) +
   facet_wrap(~DETECTEDID,scales="free_y") +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ```  
 
 ### Abalone tag movement speed between detections
@@ -204,20 +246,20 @@ ggplot(ab.res,aes(SPEED)) +
   scale_y_continuous("Frequency\n") +
     # scale_y_continuous("Frequency\n",limits = c(0,150),breaks = seq(0,150,30),expand=c(0,0)) +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ```  
 
 ### Abalone tag movement distances between detections - FILTERED
 Histograms of abalone tag movement distances after data were filtered by HPE (`r max.HPE`), distance (`r max.DIST` m), and speed (`r max.SPEED` m/s). **NOTE differenes in y-axis scale.**
 
 ```{r AbTagDistanceHistFilt,fig.height=12,fig.width=12}
-ggplot(ab.res.sub,aes(DISTANCE)) + 
+ggplot(ab.res.final,aes(DISTANCE)) + 
   geom_histogram(bins = 30,colour = "black") + facet_wrap(~DETECTEDID,scale="free_y") + 
   scale_x_continuous("\nDistance (m)",limits=c(0,max.DIST),breaks = seq(0,max.DIST,max.DIST/5),expand=c(0,0)) +
   scale_y_continuous("Frequency\n") +
     # scale_y_continuous("Frequency\n",limits = c(0,800),breaks = seq(0,800,200),expand=c(0,0)) +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ``` 
 
 ## Sync tag data
@@ -230,7 +272,7 @@ ggplot(sync.res,aes(CUT)) + geom_histogram(colour='black') +
   scale_y_continuous("Number of detections",breaks = seq(0,2000,500),limits = c(0,2000),expand = c(0,0)) +
   facet_wrap(~TRANSMITTER) +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ```
 
 ### Sync tag movement distances between detections
@@ -244,7 +286,7 @@ ggplot() +
     scale_y_continuous("Frequency\n") +
       # scale_y_continuous("Frequency\n",limits = c(0,10000),expand = c(0,0)) +
   theme_bw() +
-  theme(panel.margin=unit(1, "lines"))
+  theme(panel.spacing=unit(1, "lines"))
 ```
 
 # Spatial plots
@@ -262,15 +304,16 @@ ggplot() +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
-```
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
+```  
+
 ### Plot of pinto abalone detection locations - FILTERED
 Pinto abalone detection locations mapped relative to the hydrophone stations and symbolized by horizontal position error. Data have been filtered by HPE (HPE; threshold = `r max.HPE`) and distance (threshold = `r max.DIST`).
 
 ```{r MapAbaloneLocationsHPEFilt,fig.height=10,fig.width=12}
 ggplot() +   
-  geom_point(data = ab.res.sub,aes(LON,LAT,colour=HPE)) + 
+  geom_point(data = ab.res.final,aes(LON,LAT,colour=HPE)) + 
   scale_colour_gradientn(colours=rev(rainbow(7))) + 
   geom_point(data=station.data,aes(LON,LAT)) + 
   facet_wrap(~DETECTEDID) + 
@@ -278,8 +321,8 @@ ggplot() +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
 ```
 ## Sync tag data
 ### Plot of sync tag detection locations - UNFILTERED
@@ -295,8 +338,8 @@ ggplot() +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
 ```
 
 ### Plot of sync tag detection locations - FILTERED
@@ -312,8 +355,8 @@ ggplot() +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
 ```
 
 # Spatio-temporal plots
@@ -321,7 +364,7 @@ ggplot() +
 ### Plot of pinto abalone detection locations by individual and week
 Each panel shows data from an individual abalone, symbolized by week. 
 ```{r MapAbaloneLocationsIndivWeek,fig.height=9,fig.width=12}
-ggplot(ab.res.sub,aes(LON,LAT)) +   
+ggplot(ab.res.final,aes(LON,LAT)) +   
   geom_point(aes(colour=factor(CUT)),shape=21) + 
   scale_colour_discrete(name="Week") +
   geom_point(data=station.data,aes(LON,LAT)) +
@@ -330,15 +373,15 @@ ggplot(ab.res.sub,aes(LON,LAT)) +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
 ```
 
 ### Plot of pinto abalone detection locations by week
 Each panel shows data from all abalone during each week of the study. Apparently very few animals remained in the system after Week 15 or 16.
 
 ```{r MapAbaloneLocationsAllWeek,fig.height=9,fig.width=12}
-ggplot(ab.res.sub,aes(LON,LAT)) +   
+ggplot(ab.res.final,aes(LON,LAT)) +   
   geom_point(aes(colour=factor(DETECTEDID)),shape=21,alpha=0.5) + 
   scale_colour_discrete(name="Tag ID") +
   geom_point(data=station.data,aes(LON,LAT)) +
@@ -347,8 +390,8 @@ ggplot(ab.res.sub,aes(LON,LAT)) +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
 ```
 
 # Convex hull plots
@@ -357,20 +400,27 @@ ggplot(ab.res.sub,aes(LON,LAT)) +
 Each panel shows the convex hull that encapsulates all filtered abalone tag detections for each individual.  
 
 ```{r MapAbaloneConvexHullsIndiv,fig.height=9,fig.width=9}
+# summarize tags by number of detections
+tag.summ <- ddply(ab.res.final,.(DETECTEDID),summarise,
+                  n = length(LON))
+# # select tags with > 150 detections
+# good.tags <-select(filter(tag.summ,n>=150),DETECTEDID)
+# function for creating hulls
 find_hull <- function(df) df[chull(df$LON, df$LAT), ]
-hulls <- ddply(ab.res.sub, "DETECTEDID", find_hull)
-
-ggplot(ab.res.sub,aes(LON,LAT)) +   
+# create hulls
+hulls_all <- ddply(ab.res.final, "DETECTEDID", find_hull)
+# plot all hulls
+ggplot(ab.res.final,aes(LON,LAT)) +   
   geom_point(colour = 'black',shape=4) + 
   geom_point(data=station.data,aes(LON,LAT)) +
-  geom_polygon(data = hulls, colour = "black",fill='orange',alpha = 0.5) +
+  geom_polygon(data = hulls_all, colour = "black",fill='orange',alpha = 0.5) +
   facet_wrap(~DETECTEDID) +
   xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
 ```
 
 ### Convex hulls around pinto abalone detections - ALL
@@ -378,42 +428,80 @@ Convex hulls that encapsulate each filtered abalone tag detection are shown in o
 
 ```{r MapAbaloneConvexHullsAll,fig.height=5,fig.width=8,fig.align = 'center'}
 ggplot() +  
-  geom_polygon(data=hulls,aes(LON,LAT,group=DETECTEDID,fill=DETECTEDID),alpha = 0.5,colour='black') +
+  geom_polygon(data=hulls_all,aes(LON,LAT,group=DETECTEDID,fill=DETECTEDID),alpha = 0.5,colour='black') +
   geom_point(data=station.data,aes(LON,LAT)) +
   xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.y = element_text(angle = 90, hjust=0.5),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")  
+
+ggsave(filename = "../Figs/fig_convex_hulls_ALL.png")
+```
+
+```{r MapAbaloneConvexHullsSelect,fig.height=7,fig.width=11,fig.align = 'center'}
+ggplot() +  
+  geom_polygon(data=hulls_all,aes(LON,LAT,group=DETECTEDID,fill=DETECTEDID),alpha = 0.5,colour='black') +
+  geom_point(data=station.data,aes(LON,LAT)) +
+  xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
+  theme_bw() + theme(plot.background=element_blank(),
+                     axis.text.y = element_text(angle = 90, hjust=0.5),
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")  
+
+ggsave(filename = "../Figs/fig_convex_hulls_ALL.png",height = 7,width = 12)
 ```
 
 ### Density contours around pinto abalone detections
-Each panel shows the density contours (2D kernel density estimation; see http://docs.ggplot2.org/current/geom_density_2d.html)) around filtered abalone tag detections for each individual.
+Each panel shows the density contours (2D kernel density estimation; see http://docs.ggplot2.org/current/geom_density_2d.html) around filtered abalone tag detections for each individual.
 
 ```{r MapAbaloneContoursIndiv,fig.height=9,fig.width=9}
-ggplot(ab.res.sub,aes(x = LON,y = LAT)) +   
-  geom_density_2d(colour = "orange") +
+ggplot(ab.res.final,aes(x = LON,y = LAT)) +
+  geom_density_2d(colour='orange') +
   geom_point(data=station.data,aes(LON,LAT)) +
-  scale_colour_gradientn(colors = rev(rainbow(7))) +
   facet_wrap(~DETECTEDID) +
-  xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
+  xlab("\nLongitude (W)") + ylab("Latitude (N)\n") +
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.x = element_blank(),
                      axis.text.y = element_blank(),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines")) +
+  coord_map(projection = "azequidistant")
+
 ```
 
 ### Density contours around pinto abalone detections - ALL
 Density contours for all filtered abalone tag detection in one plot. For clarity, only data from abalone tags with a minimum of `r min.DETECT` detections are shown. Apparently few, if any, abalone were observed in the SE portion of the study site.
 
-```{r MapAbaloneContoursAll,fig.height=5,fig.width=8,fig.align = 'center'}
-ggplot(ab.res.sub,aes(x = LON,y = LAT)) +   
-  geom_density_2d(aes(colour = DETECTEDID)) +
+```{r MapAbaloneContoursAll,fig.height=7,fig.width=11,fig.align = 'center'}
+ggplot(ab.res.final,aes(x = LON,y = LAT)) +   
+  geom_density_2d(aes(colour = tag),alpha=0.5) +
   geom_point(data=station.data,aes(LON,LAT)) +
+  scale_colour_brewer(name="Tag",palette="Spectral") +
   xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
   theme_bw() + theme(plot.background=element_blank(),
                      axis.text.y = element_text(angle = 90, hjust=0.5),
-                     panel.margin=unit(1, "lines")) +
-  coord_map()
+                     panel.spacing=unit(1, "lines"),
+                     legend.position = c(0.95,0.95),
+                     legend.justification = c(1,1)) +
+  coord_map(projection = "azequidistant")
+
+ggsave(filename = "../Figs/fig_tag_density_contours_ALL.png",height = 7,width = 12)
 ```
+
+```{r MapAbaloneContoursAllFacet,fig.height=7,fig.width=11,fig.align = 'center'}
+ggplot(ab.res.final,aes(x = LON,y = LAT)) +   
+  geom_density_2d(aes(colour = tag),alpha=0.5) +
+  geom_point(data=station.data,aes(LON,LAT)) +
+  facet_wrap(~tag) +
+  scale_colour_brewer(name="Tag",palette="Spectral") +
+  xlab("\nLongitude (W)") + ylab("Latitude (N)\n") + 
+  theme_bw() + theme(plot.background=element_blank(),
+                     axis.text.y = element_text(angle = 90, hjust=0.5),
+                     panel.spacing=unit(1, "line"),
+                     legend.position = 'bottom') +
+  coord_map(projection = "azequidistant")
+
+ggsave(filename = "../Figs/fig_tag_density_contours_ALL_facet.png",height = 7,width = 12)
+```
+
+
